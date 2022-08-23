@@ -1,0 +1,159 @@
+import csv
+import pandas as pd
+import os
+
+def get(ff):
+ with open(ff,encoding='utf8') as fp:
+  read = csv.reader(fp)
+  for line in read:
+   for w in line:
+    yield w
+
+def fix(ff):
+ with open(ff+'_test.txt','w',encoding='utf8') as fp, open(ff,encoding='utf8') as file:
+  for line in file:
+   print(line.replace('"','""').replace("'","''").replace("\\","\\\\"), file=fp)
+ with open(ff,'w',encoding='utf8') as fp:
+  l=[]
+  gen=get(ff+'_test.txt')
+  print(",".join([next(gen) for _ in range(6)]),file=fp)
+  for w in gen:
+   l.append(w)
+   if w=='None':
+    k=len(l)
+    bb=''.join(l[1:k-4])
+    t = [l[0],'"'+bb+'"']
+    t.extend(l[k-4:])
+    print(",".join(t),file=fp)
+    l=[]
+ os.remove(ff+'_test.txt')
+
+def check(ff,li=None):
+ r=True
+ with open(ff,encoding='utf8') as fp:
+   read = csv.reader(fp)
+   i=1
+   for line in read:
+    if li!=None and i==li:
+     print(i, line)
+     r=False
+     break
+    elif li==None and (len(line)!= 6 or (i !=1 and line[-1]!='None')):
+     print(i, line)
+     r=False
+     break
+    for w in line[:-1]:
+     if "None" in w:
+      print(i,line)
+      break
+    i+=1
+ try:
+  tt = pd.read_csv(ff)
+ except:
+  r=False
+ return r
+ 
+
+def myfil(ff):
+ with open(ff+"_test.txt",'w',encoding='utf8') as fp1, open(ff,encoding='utf8') as fp:
+   read = csv.reader(fp)
+   write = csv.writer(fp1) 
+   i=1
+   for line in read:
+    if i!=1:
+     line[1] = clean_tweet(line[1])
+     if check_comment(line[1]):
+      continue
+     line[1] = line[1]
+    write.writerow(line)
+    i+=1
+ return pd.read_csv(ff)
+
+def myfil(ff):
+ with open(ff+"_test.txt",'w',encoding='utf8') as fp1, open(ff,encoding='utf8') as fp:
+   read = csv.reader(fp)
+   i=1
+   for line in read:
+    if i!=1:
+     line[1] = clean_tweet(line[1])
+     if check_comment(line[1]):
+      continue
+     line[1] = line[1]
+    line[1] = line[1].replace('"','""').replace("'","''").replace("\\","\\\\")
+    line[1] = '"'+line[1]+'"'
+    print(",".join(line),file=fp1)
+    i+=1
+ return pd.read_csv(ff)
+
+import demoji
+import re
+import string
+import unicodedata
+
+def clean_tweet(tweet):
+        # Remove links in tweets
+        tweet = re.sub(r'http\S+', " ", tweet)
+        # Tweets are usually full of emojis. We need to remove them.
+        tweet = demoji.replace(tweet, repl="")
+        return tweet
+
+def check_comment(cmt):
+    t=0
+    i=0
+    for c in cmt:
+        t+=1
+        if u'\u0d01' <= c <= u'\u0d7f':
+            i+=1
+    if t==0 or i/t < 0.5:
+        return True
+    return False
+
+
+def getspl(ff):
+ with open(ff,encoding='utf8') as fp:
+   read = csv.reader(fp)
+   i=1
+   cd={}
+   for line in read:
+    for c in line[1]:
+     if u'\u0d01' <= c <= u'\u0d7f':
+      continue
+     if u'\u0041' <= c <= u'\u007a':
+      continue
+     if unicodedata.category(c)[0] == 'P':
+      continue
+     cd[c]=1
+   print(cd.keys())
+
+import emoji
+import re
+import csv
+emoticon_string = r"""
+    (?:
+      [<>]?
+      [:;=8]                     # eyes
+      [\-o\*\']?                 # optional nose
+      [\)\]\(\[dDpP/\:\}\{@\|\\] # mouth      
+      |
+      [\)\]\(\[dDpP/\:\}\{@\|\\] # mouth
+      [\-o\*\']?                 # optional nose
+      [:;=8]                     # eyes
+      [<>]?
+    )"""
+
+def give_emoji_free_text(text):
+ return emoji.replace_emoji(text, replace='')
+
+def sanitize(string):
+    string = give_emoji_free_text(string)
+    string = re.sub(emoticon_string,'',string)
+    return string
+
+def chkch(ff):
+ with open(ff+"_test.txt",'w',encoding='utf8') as fp1, open(ff,encoding='utf8') as fp:
+   read = csv.reader(fp)
+   for line in read:
+    line[1] = sanitize(line[1])
+    print(",".join(list(map(str,line))),file=fp1)
+
+chkch("channelList_10_Music_comments.txt")

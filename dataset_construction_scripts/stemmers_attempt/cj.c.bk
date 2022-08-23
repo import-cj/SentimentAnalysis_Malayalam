@@ -1,0 +1,60 @@
+#include <stdio.h>
+#include "api.h"
+#include "langcodes.h"
+#include "rendering.h"
+#include "result-codes.h"
+#include "symbol-table.h"
+#include "token.h"
+#include "trie.h"
+#include "util.h"
+#include "varnam.h"
+#include "varray.h"
+#include "vtypes.h"
+#include "vutf8.h"
+#include "vword.h"
+#include "words-table.h"
+
+extern int
+stem(varnam *handle, const char *word, struct varray_t *stem_results);
+
+extern int varnam_init(const char *scheme_file, varnam **handle, char **msg);
+extern void varnam_destroy(varnam *handle);
+static const char *cjf(varnam* handle, const char *s);
+
+int main(int argc, char **argv){
+    //cjf(argv[1]);
+    FILE *fin=fopen ("log.txt","r");
+	FILE *fou=fopen ("out1.txt","w");
+    read_words(fin,fou);
+    fclose(fin);
+    return 0;
+}
+
+void read_words (FILE *f, FILE*fo) {
+	varnam* handle;
+	char* msg;
+	int rc = varnam_init ("ml.vst", &handle, &msg);
+    char x[1024];
+    /* assumes no word exceeds length of 1023 */
+    while (fscanf(f, " %1023s", x) == 1) {
+		fputs(cjf(handle,x),fo);
+		fputs(" ",fo);
+        fputs(cjf(handle,x),fo);
+		fputs("\n",fo);
+    }
+	varnam_destroy (handle);
+}
+
+static const char *cjf(varnam* handle, const char *s) {
+    int rc, i;
+    varray *stem_results = varray_init();
+    rc = stem(handle, s, stem_results);
+    char *r="";
+    if (stem_results->index >=0) {
+        r = ((vword*)stem_results->memory[stem_results->index])->text;
+    }
+	return r;
+    //printf("%s\n", r);
+    // കാര്യം")
+}
+

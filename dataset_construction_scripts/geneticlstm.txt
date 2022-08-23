@@ -1,0 +1,190 @@
+!pip install deap
+!pip install bitstring
+
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from sklearn.metrics import mean_squared_error
+
+from deap import base, creator, tools, algorithms
+from scipy.stats import bernoulli
+from bitstring import BitArray
+from sklearn.preprocessing import MinMaxScaler
+
+from sklearn.preprocessing import LabelEncoder
+from keras.utils import np_utils
+
+from sklearn.model_selection import train_test_split
+from keras.models import Sequential
+from keras.layers import CuDNNLSTM
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras import optimizers
+
+np.random.seed(73)
+import math
+
+def getTrain(f):
+  dataframe = pd.read_parquet(f)
+  traindf, testdf = testtrainsplit(dataframe)
+  x_train = traindf.iloc[:, :-1].to_numpy()
+  x_test = testdf.iloc[:, :-1].to_numpy()
+  y_train = traindf.sentiment.to_numpy()
+  y_test = testdf.sentiment.to_numpy()
+  #print(x_train.shape)
+  #print(y_train.shape)
+  #print(x_test.shape)
+  #print(y_test.shape)
+  encoder = LabelEncoder()
+  encoder.fit(list(y_train)+list(y_test))
+  y_train = np_utils.to_categorical(encoder.transform(y_train))
+  y_test  = np_utils.to_categorical(encoder.transform(y_test))
+  def train_evaluate(ga_individual_solution):   
+      nonlocal x_train
+      nonlocal x_test
+      nonlocal y_train
+      nonlocal y_test
+      # Decode GA solution to integer for num_neurons1, epochs and batch_size 
+      num_neurons1_bits = BitArray(ga_individual_solution[0:9])
+      num_neurons2_bits = BitArray(ga_individual_solution[9:18])
+      epoch_bits = BitArray(ga_individual_solution[18:25]) 
+      batch_size_bits = BitArray(ga_individual_solution[25:35])
+      learning_rate_bits = BitArray(ga_individual_solution[35:])
+    
+      num_neurons1 = num_neurons1_bits.uint
+      num_neurons2 = num_neurons2_bits.uint
+      epoch = epoch_bits.uint
+      Batch_size = batch_size_bits.uint
+      temp = learning_rate_bits.uint
+      learning_rate = temp*(math.exp(-9))
+      
+      print('\nNum of neurons1: ', num_neurons1,'\nNum of neurons2',num_neurons2, '\nEpoch:', epoch,'\nBatch size:',Batch_size,'\nLearning rate:',learning_rate)
+      
+      # Return fitness score of 100 if window_size or num_unit is zero
+      if num_neurons1 < 100 or num_neurons2 < 100 or epoch < 100 or Batch_size < 500  or learning_rate < 0:
+        return 0,
+      
+      #split into train and validation (80/20)
+      #x_train,x_test,y_train,y_test=train_test_split(x_train_scaled,encoded_y,test_size=0.2)
+      
+      #converting the input train and test set to array format
+      #x_train=np.array(x_train)
+      #x_test=np.array(x_test)
+      
+      #reshape input data according to LSTM model requirements
+      x_train_modified = x_train.reshape(x_train.shape[0],1,x_train.shape[1])
+      x_test_modified = x_test.reshape(x_test.shape[0],1,x_test.shape[1])
+      
+      #Design the LSTM model
+      
+      optimizer=optimizers.Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, amsgrad=False)
+      
+      model = Sequential()
+      model.add(CuDNNLSTM(num_neurons1, input_shape=(x_train_modified.shape[1],x_train_modified.shape[2]), return_sequences=True))
+      model.add(Dropout(0.2))
+      model.add(CuDNNLSTM(num_neurons2))
+      model.add(Dropout(0.2))
+      model.add(Dense(y_train.shape[1], activation='softmax'))
+      model.compile(loss='categorical_crossentropy',optimizer='adam',metrics=['acc'])
+      model.summary()
+      
+      #model.fit(x_train_modified, y_train, epochs=epoch, batch_size=Batch_size)
+
+      history=model.fit(x_train_modified, y_train, epochs=epoch, batch_size=Batch_size,verbose=0)
+      y_pred = model.predict(x_test_modified)
+      #print(history.history)
+      acc=history.history['acc']
+      maxacc=round(max(acc),5)
+      #rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+      print('Validation Accuracy : ', maxacc,'\n')
+      #print('Accuracy:', max(acc))      
+      return maxacc,
+  return train_evaluate
+
+f="/content/dataset_word_muril_none.gzip"
+
+population_size = 50
+num_generations = 20
+gene_length = 42
+
+# As we are trying to minimize the RMSE score, that's why using -1.0. 
+# In case, when you want to maximize accuracy for instance, use 1.0
+creator.create('FitnessMax', base.Fitness, weights = (1.0,))
+creator.create('Individual', list , fitness = creator.FitnessMax)
+
+toolbox = base.Toolbox()
+toolbox.register('binary', bernoulli.rvs, 0.5)
+toolbox.register('individual', tools.initRepeat, creator.Individual, toolbox.binary, n = gene_length)
+toolbox.register('population', tools.initRepeat, list , toolbox.individual)
+
+toolbox.register('mate', tools.cxOrdered)
+toolbox.register('mutate', tools.mutShuffleIndexes, indpb = 0.6)
+toolbox.register('select', tools.selRoulette)
+ev = getTrain(f)
+toolbox.register('evaluate', ev)
+
+population = toolbox.population(n = population_size)
+start_time = datetime.now()
+print("Start time:", start_time)
+r = algorithms.eaSimple(population, toolbox, cxpb = 0.4, mutpb = 0.1, ngen = num_generations, verbose = False)
+end_time = datetime.now()
+print('End time:',end_time)
+time_elapsed = end_time-start_time
+print('Time elapsed (hh:mm:ss.ms) {}'.format(time_elapsed))
+
+#Consolidate the best individuals
+best_individuals = tools.selBest(population,k = 1)
+best_num_neurons1 = None
+best_num_neurons2 = None
+best_epoch = None
+best_batch_size = None
+best_learning_rate = None
+
+for bi in best_individuals:
+    num_neurons1_bits = BitArray(bi[0:9])
+    num_neurons2_bits = BitArray(bi[9:18])
+    epoch_bits = BitArray(bi[18:25])
+    batch_size_bits = BitArray(bi[25:35])
+    learning_rate_bits = BitArray(bi[35:]) 
+    
+    best_num_neurons1 = num_neurons1_bits.uint
+    best_num_neurons2 = num_neurons2_bits.uint
+    best_epoch = epoch_bits.uint
+    best_batch_size = batch_size_bits.uint
+    temp = learning_rate_bits.uint
+    best_learning_rate = temp*(math.exp(-9))
+    print('\nNum of neurons1: ', best_num_neurons1, '\nNum of neurons2: ', best_num_neurons2,  '\nEpoch:', best_epoch, '\nBatch_size:', best_batch_size,'\nLearning rate:',best_learning_rate)
+
+dataframe = pd.read_parquet(f)
+traindf, testdf = testtrainsplit(dataframe)
+x_train = traindf.iloc[:, :-1].to_numpy()
+x_test = testdf.iloc[:, :-1].to_numpy()
+y_train = traindf.sentiment.to_numpy()
+y_test = testdf.sentiment.to_numpy()
+encoder = LabelEncoder()
+encoder.fit(list(y_train)+list(y_test))
+y_train = np_utils.to_categorical(encoder.transform(y_train))
+y_test  = np_utils.to_categorical(encoder.transform(y_test))
+
+x_train_modified = x_train.reshape(x_train.shape[0],1,x_train.shape[1])
+x_test_modified = x_test.reshape(x_test.shape[0],1,x_test.shape[1])
+
+optimizer=optimizers.Adam(lr=best_learning_rate, beta_1=0.9, beta_2=0.999, amsgrad=False)
+
+model = Sequential()
+model.add(CuDNNLSTM(best_num_neurons1, input_shape=(x_train_modified.shape[1],x_train_modified.shape[2]), return_sequences=True))
+model.add(Dropout(0.2))
+model.add(CuDNNLSTM(best_num_neurons2))
+model.add(Dropout(0.2))
+model.add(Dense(y_train.shape[1], activation='softmax')) 
+model.compile(loss='categorical_crossentropy', optimizer='adam',metrics=['accuracy'])
+model.summary()
+
+history=model.fit(x_train_modified, y_train, epochs=best_epoch, batch_size=best_batch_size, validation_data=(x_test_modified,y_test))
+y_prob=model.predict(x_test_modified)
+y_pred = np.argmax(y_prob, axis=1)
+print(classification_report(testdf.sentiment.to_numpy(), y_pred))
+
+y_prob=model.predict(x_train_modified)
+y_pred = np.argmax(y_prob, axis=1)
+print(classification_report(traindf.sentiment.to_numpy(), y_pred))

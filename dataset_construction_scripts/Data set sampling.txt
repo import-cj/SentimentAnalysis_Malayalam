@@ -1,0 +1,14 @@
+dataset sampling metrics
+
+contain all necessary characters => malayalam digits, numbers, punctuations
+contain no other special characters => maintain list of special characters apart from malayalam
+contain maximum unique words
+balanced distribution of sentiments
+balanced distribution of abuse
+balanced distribution of authors of comments
+
+
+exclude comments that cause bias like unique letters or unique words as in very few freq and all giving same output. not abusive words that are obvious.
+tf-idf similar ?
+couple of syntactically similar sentences to improve training ?
+length ? avoid too big ones or split them up into smaller ones ?
